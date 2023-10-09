@@ -1,3 +1,14 @@
+- 入口函数：`bilstm.py`
+- 学生模型：`models`
+- 数据处理：`bilstm.py`
+- 蒸馏：`distillation/hintonDistiller.py`
+
+SST2：
+- bug: 学习问题，正确率还在50%左右，还在调试
+
+QQP：
+- 可以正常学习，正确率63%~70%左右
+
 ![Hinton Knowledge Distillation](/hintonKD.png)
 
 # Knowledge Distillation in PyTorch
