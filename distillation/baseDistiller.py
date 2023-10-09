@@ -9,17 +9,17 @@ class BaseDistiller(nn.Module):
     def __init__(self):
         super(BaseDistiller, self).__init__()
         self.currentTime = datetime.now().strftime("%Y%m%d-%H%M%S")
-        
+
     def _setHook(self, hook, model, layer):
         """
         Set hook for distillation on provided model and layer.
         """
         hook.setHook(self._getLayer(model, layer))
-    
+
     def _getLayer(self, model, layer):
         """
         Fetch layer from model.
-        
+
         :param layer: int or str; layer position or layer name for backbone model, to use as distillation layer
         """
         if type(layer) == str:
@@ -30,7 +30,7 @@ class BaseDistiller(nn.Module):
             return children[layer]
         else:
             raise  NameError(f'Hidden layer ({layer}) not found in model!')
-                        
+
     def print_epoch(self, epoch, epochs, metrics):
         """
         Print training metrics for epoch.
@@ -57,24 +57,24 @@ class BaseDistiller(nn.Module):
                     teacher.load_state_dict(state['teacher'])
                 if optimizer is not None:
                     optimizer.load_state_dict(state['optimizer'])
-                
+
         return startEpoch
-        
+
     def init_tensorboard_logger(self, subDirectory=None):
-        self.logDir = os.path.join('logs', '' if subDirectory is None else subDirectory, self.currentTime) 
+        self.logDir = os.path.join('logs', '' if subDirectory is None else subDirectory, self.currentTime)
         self.logger = Logger(self.logDir)
-        
+
     def log(self, epoch, metrics):
         """
         Log performance metrics to tensorboard.
-        
+
         :param epoch: int, current training epoch
         :param metrics: dict, name and metric
         """
         for name, metric in metrics.items():
             self.logger.add_scalar(name, metric, epoch)
         self.logger.flush()
-                
+
     def save(self, epoch, student, teacher, optimizer, subDirectory=None):
         """
         Save checkpoint of model.
@@ -86,33 +86,41 @@ class BaseDistiller(nn.Module):
                     'teacher': teacher.state_dict(),
                     'optimizer': optimizer.state_dict()},
                    os.path.join(self.checkpointDir, 'checkpoint.pt'))
-        
+
     def validate(self, student, dataloader, objective, OneHot=False):
         """
         Validate student model on all data in dataloader.
-        
+
         :return: dict, named metrics for logging.
         """
         student.eval()
-        
+
         device = next(student.parameters()).device
         accuracy = Accuracy(OH=OneHot)
         lossMeter = AverageMeter()
         accMeter = AverageMeter()
-        
-        for _, (data, target) in enumerate(dataloader):
-            data, target = data.to(device), target.to(device)
+
+        for _, data in enumerate(dataloader):
+            if isinstance(data, dict):
+                target = data.pop('labels').to(device)
+                data = data.pop('input_ids').to(device)
+            elif len(data) == 2:
+                data, target = data[0].to(device), data[1].to(device)
+            elif len(data) == 3:
+                data, target = data[0].to(device), data[2].to(device)
+            else:
+                raise NameError(f'Unknown data format: {len(data)}')
 
             with torch.no_grad():
                 # Calculate logits
-                sLogits = student(data)
+                sLogits = student(data).logits
 
                 # Calculate loss
                 batchLoss = objective(nn.functional.log_softmax(sLogits, dim=1), target)
-            
+
             # Save metrics
             lossMeter.update(batchLoss.item(), n=len(data))
             accMeter.update(accuracy(nn.functional.softmax(sLogits, dim=1), target), n=len(data))
-        
+
         return {'Valid/Loss': lossMeter.avg,
                 'Valid/Accuracy': accMeter.avg}
